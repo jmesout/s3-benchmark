@@ -141,6 +141,8 @@ dmypy.json
 ###############################
 *_results_*.csv
 *_speeds_*.png
+*_report_*.json
+fastest_configuration_*.json
 
 # Logs #
 ########

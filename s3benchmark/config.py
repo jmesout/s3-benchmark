@@ -76,6 +76,8 @@ class Config:
     endpoint_url: Optional[str]
     bucket: str
     signature_version: str = "s3v4"
+    request_checksum_calculation: str = "when_required"
+    addressing_style: str = "path"
     file_sizes_mb: List[int] = field(default_factory=list)
     transfer: TransferParams = field(default_factory=TransferParams)
     repeats: int = 3
@@ -88,9 +90,29 @@ def load_config(env: dict | None = None) -> Config:
     """Load and validate configuration from the environment (via ``.env``)."""
     load_dotenv()
 
+    # Provider preset (optional): fills endpoint + signature defaults.
+    provider_name = os.getenv("S3_PROVIDER", "").strip().lower()
+
     access_key = os.getenv("AWS_ACCESS_KEY_ID")
     secret_key = os.getenv("AWS_SECRET_ACCESS_KEY")
     endpoint_url = os.getenv("S3_ENDPOINT_URL")
+    signature_version = os.getenv("SIGNATURE_VERSION")
+
+    addressing_style = os.getenv("ADDRESSING_STYLE", "path")
+    checksum = os.getenv("REQUEST_CHECKSUM_CALCULATION", "when_required")
+
+    if provider_name:
+        from .presets import get_preset
+
+        preset = get_preset(provider_name)
+        # Preset provides defaults; explicit env values still win.
+        if endpoint_url is None:
+            endpoint_url = preset.endpoint_url
+        if signature_version is None:
+            signature_version = preset.signature_version
+        addressing_style = preset.addressing_style
+        checksum = preset.request_checksum_calculation
+
     bucket = _getenv_or_raise("S3_BUCKET_NAME")
 
     transfer = TransferParams(
@@ -112,7 +134,9 @@ def load_config(env: dict | None = None) -> Config:
         secret_key=secret_key,
         endpoint_url=endpoint_url,
         bucket=bucket,
-        signature_version=os.getenv("SIGNATURE_VERSION", "s3v4"),
+        signature_version=signature_version or "s3v4",
+        addressing_style=addressing_style,
+        request_checksum_calculation=checksum,
         file_sizes_mb=file_sizes,
         transfer=transfer,
         repeats=int(os.getenv("REPEATS", "3")),

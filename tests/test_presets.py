@@ -1,10 +1,8 @@
 """Tests for Phase 5: provider presets + credential best practices."""
-import os
 
 import pytest
 
 from s3benchmark.presets import (
-    PROVIDERS,
     get_preset,
     list_presets,
     provider_help,

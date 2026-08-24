@@ -132,6 +132,49 @@ def run_mixed(cfg: Config, args) -> None:
         json.dump(result, f, indent=2)
 
 
+def run_report(cfg: Config, args) -> None:
+    from .reporting import render_html, to_parquet, write_html_report, plot_size_speed_with_errors, plot_upload_vs_download
+
+    # Merge results from one or more JSON files into a single report dict for plotting.
+    combined = {"metadata": {}, "results": []}
+    for path in args.files:
+        with open(path) as f:
+            d = json.load(f)
+        combined["results"].extend(d.get("results", []))
+        if not combined["metadata"]:
+            combined["metadata"] = d.get("metadata", {})
+
+    if args.plot:
+        plot_size_speed_with_errors(combined, args.plot)
+        print(f"Wrote throughput plot -> {args.plot}")
+    if args.plot_upload_download:
+        plot_upload_vs_download(combined, args.plot_upload_download)
+        print(f"Wrote upload-vs-download plot -> {args.plot_upload_download}")
+    if args.html:
+        write_html_report(combined, args.html)
+        print(f"Wrote HTML report -> {args.html}")
+    if args.parquet:
+        to_parquet(combined, args.parquet)
+        print(f"Wrote Parquet -> {args.parquet}")
+
+
+def run_compare(cfg: Config, args) -> None:
+    from .reporting import compare_report_files
+
+    results = compare_report_files(args.baseline, args.current, args.threshold)
+    if not results:
+        print("No comparable results found between the two reports.")
+        return
+    print(f"{'Size MB':>8} {'Dir':<9} {'Baseline':>10} {'Current':>10} {'Δ%':>8}  Status")
+    for r in results:
+        flag = "REGRESSION" if r.regressed else "ok"
+        print(f"{r.size_mb:>8.0f} {r.direction:<9} {r.baseline_mbps:>10.1f} "
+              f"{r.current_mbps:>10.1f} {r.delta_pct:>+8.1f}  {flag}")
+    n_reg = sum(1 for r in results if r.regressed)
+    if n_reg:
+        print(f"\n{n_reg} regression(s) detected.")
+
+
 def run_tune(cfg: Config) -> None:
     ranges = load_tuning_ranges()
     s3 = create_s3_client(cfg)
@@ -258,6 +301,19 @@ def build_parser() -> argparse.ArgumentParser:
     m.add_argument("--ops", type=int, default=50, help="Total operations")
     m.add_argument("-c", "--concurrency", type=int, default=1)
 
+    r = sub.add_parser("report", help="Render an HTML/Parquet report from JSON result files.")
+    r.add_argument("files", nargs="+", help="JSON report file(s) to combine")
+    r.add_argument("--html", help="Output HTML path")
+    r.add_argument("--parquet", help="Output Parquet path")
+    r.add_argument("--plot", help="Output throughput-plot PNG path")
+    r.add_argument("--plot-upload-download", help="Output upload-vs-download PNG path")
+
+    cmp = sub.add_parser("compare", help="Compare two JSON reports; flag regressions.")
+    cmp.add_argument("baseline", help="Baseline JSON report")
+    cmp.add_argument("current", help="Current JSON report")
+    cmp.add_argument("--threshold", type=float, default=10.0,
+                     help="Regression threshold in percent (default 10)")
+
     return parser
 
 
@@ -331,6 +387,9 @@ def _plan(cfg: Config, args) -> str:
     return "\n".join(lines)
 
 
+NO_S3_COMMANDS = {"report", "compare"}
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
@@ -338,6 +397,18 @@ def main(argv: list[str] | None = None) -> int:
         level="DEBUG" if args.verbose else ("ERROR" if args.quiet else "INFO"),
         json_output=args.json_logs,
     )
+
+    # report/compare operate on local JSON files and don't need S3 config.
+    if args.command in NO_S3_COMMANDS:
+        try:
+            if args.command == "report":
+                run_report(None, args)
+            elif args.command == "compare":
+                run_compare(None, args)
+        except FileNotFoundError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1
+        return 0
 
     try:
         cfg = load_config()
@@ -364,6 +435,10 @@ def main(argv: list[str] | None = None) -> int:
             run_smallobj(cfg, args)
         elif args.command == "mixed":
             run_mixed(cfg, args)
+        elif args.command == "report":
+            run_report(cfg, args)
+        elif args.command == "compare":
+            run_compare(cfg, args)
     except KeyboardInterrupt:
         print("\nInterrupted.", file=sys.stderr)
         return 130

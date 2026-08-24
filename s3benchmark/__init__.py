@@ -6,10 +6,10 @@ across different object sizes and ``boto3`` ``TransferConfig`` settings.
 
 __version__ = "1.0.0"
 
-from .config import load_config, TransferParams, parse_bool
+from .config import TransferParams, load_config, parse_bool
+from .io import calculate_speed, create_dummy_file
+from .report import plot_results, save_results_to_csv
 from .transfer import create_s3_client
-from .io import create_dummy_file, calculate_speed
-from .report import save_results_to_csv, plot_results
 
 __all__ = [
     "load_config",

@@ -1,7 +1,7 @@
 """Tests for Phase 2: config file, profiles, CLI overrides, dry-run."""
 import pytest
 
-from s3benchmark.config import Config, TransferParams
+from s3benchmark.config import Config
 from s3benchmark.configfile import ConfigFile, find_config_file
 
 
@@ -55,7 +55,7 @@ def test_find_config_file_walks_up(tmp_path):
 
 
 def test_cli_overrides(monkeypatch):
-    from s3benchmark.cli import build_parser, _apply_overrides
+    from s3benchmark.cli import _apply_overrides, build_parser
 
     cfg = Config(
         access_key="AK", secret_key="SK", endpoint_url=None, bucket="b",
@@ -71,7 +71,7 @@ def test_cli_overrides(monkeypatch):
 
 
 def test_cli_overrides_invalid_chunksize(monkeypatch):
-    from s3benchmark.cli import build_parser, _apply_overrides
+    from s3benchmark.cli import _apply_overrides, build_parser
     from s3benchmark.config import ConfigError
 
     cfg = Config(access_key="AK", secret_key="SK", endpoint_url=None, bucket="b")

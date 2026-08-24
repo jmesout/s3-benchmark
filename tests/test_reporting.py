@@ -1,5 +1,4 @@
 """Tests for Phase 3 reporting: flatten, compare, HTML, plots."""
-import json
 
 import pytest
 

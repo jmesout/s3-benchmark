@@ -1,16 +1,15 @@
 """Tests for s3benchmark helpers."""
-import os
 
 import pytest
 
-from s3benchmark.io import calculate_speed, create_dummy_file
 from s3benchmark.config import (
     ConfigError,
     TransferParams,
+    load_config,
     parse_bool,
     parse_int_list,
-    load_config,
 )
+from s3benchmark.io import calculate_speed, create_dummy_file
 
 
 def test_parse_bool():

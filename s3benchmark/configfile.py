@@ -31,7 +31,7 @@ def _read_toml(path: str) -> Dict[str, Any]:
     except FileNotFoundError:
         return {}
     except Exception as exc:  # noqa: BLE001
-        raise ConfigError(f"Failed to parse {path}: {exc}")
+        raise ConfigError(f"Failed to parse {path}: {exc}") from exc
 
 
 @dataclass
@@ -42,7 +42,7 @@ class ConfigFile:
     path: Optional[str] = None
 
     @classmethod
-    def load(cls, path: str) -> "ConfigFile":
+    def load(cls, path: str) -> ConfigFile:
         return cls(data=_read_toml(path), path=path)
 
     def profile(self, name: Optional[str]) -> Dict[str, Any]:

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from typing import List
+from typing import List, Optional
 
 from dotenv import load_dotenv
 
@@ -71,9 +71,9 @@ class TransferParams:
 class Config:
     """All configuration needed to run a benchmark."""
 
-    access_key: str
-    secret_key: str
-    endpoint_url: str | None
+    access_key: Optional[str]
+    secret_key: Optional[str]
+    endpoint_url: Optional[str]
     bucket: str
     signature_version: str = "s3v4"
     file_sizes_mb: List[int] = field(default_factory=list)

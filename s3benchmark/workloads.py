@@ -15,17 +15,15 @@ import random
 import tempfile
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from boto3.s3.transfer import TransferConfig
 
 from .config import Config
 from .io import create_dummy_file
-from .results import RunMetadata, RunReport, TransferResult, TransferSample
+from .results import TransferResult
 from .stats import summarize
 from .transfer import create_s3_client
-from . import __version__
 
 MB = 1024 * 1024
 
@@ -274,7 +272,7 @@ class MixedWorkloadBenchmark:
 
         rng = random.Random(42)
 
-        results = {"reads": [], "writes": [], "errors": 0}
+        results: Dict[str, Any] = {"reads": [], "writes": [], "errors": 0}
 
         def op():
             size_mb = rng.choice(sizes_mb)

@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import math
 import statistics
-from typing import Iterable, List, Sequence
+from collections.abc import Iterable, Sequence
+from typing import List
 
 
 def percentile(sorted_values: Sequence[float], p: float) -> float:

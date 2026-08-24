@@ -6,16 +6,15 @@ import os
 import tempfile
 import time
 from datetime import datetime, timezone
-from typing import Callable, List, Optional
+from typing import Callable, List
 
 from boto3.s3.transfer import TransferConfig
 
+from . import __version__
 from .config import Config
 from .io import create_dummy_file
 from .results import RunMetadata, RunReport, TransferResult, TransferSample
-from .stats import summarize
 from .transfer import create_s3_client
-from . import __version__
 
 MB = 1024 * 1024
 
@@ -130,7 +129,6 @@ class BenchmarkEngine:
         if self.verify and result.succeeded > 0:
             try:
                 etag = _object_etag(self.s3, self.cfg.bucket, object_key)
-                result.match_local_md5 = (etag == local_md5)
                 result.integrity_ok = (etag == local_md5)
             except Exception as exc:  # noqa: BLE001
                 result.integrity_ok = False
@@ -184,11 +182,6 @@ class BenchmarkEngine:
                 result.failed += 1
             elif not is_warmup:
                 result.samples.append(sample)
-
-        if self.verify and result.succeeded > 0 and os.path.exists(download_path):
-            dl_md5 = _md5_of_file(download_path)
-            # We don't have the source hash for pre-existing objects; just record.
-            result.downloaded_md5 = dl_md5
 
         if os.path.exists(download_path):
             os.remove(download_path)

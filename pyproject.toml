@@ -19,6 +19,9 @@ dependencies = [
 dev = [
     "pytest",
 ]
+parquet = [
+    "pyarrow",
+]
 
 [project.scripts]
 s3-benchmark = "s3benchmark.cli:main"

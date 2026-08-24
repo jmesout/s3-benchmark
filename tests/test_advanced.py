@@ -3,7 +3,7 @@ import math
 
 import pytest
 
-from s3benchmark.advanced import CostEstimate, estimate_cost, InMemoryBenchmark
+from s3benchmark.advanced import CostEstimate, InMemoryBenchmark, estimate_cost
 
 
 def test_cost_estimate_upload():

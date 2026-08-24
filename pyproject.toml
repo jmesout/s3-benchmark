@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "s3-benchmark"
+version = "1.0.0"
+description = "Benchmark S3 upload/download throughput across object sizes and TransferConfig settings"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+dependencies = [
+    "boto3",
+    "matplotlib",
+    "python-dotenv",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+]
+
+[project.scripts]
+s3-benchmark = "s3benchmark.cli:main"
+
+[tool.setuptools]
+packages = ["s3benchmark"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

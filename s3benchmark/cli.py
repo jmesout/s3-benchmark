@@ -206,6 +206,43 @@ def run_providers(args) -> None:
         print(f"{'':<14} {p.notes}")
 
 
+def run_inmem(cfg: Config, args) -> None:
+    from .advanced import InMemoryBenchmark
+
+    bench = InMemoryBenchmark(cfg)
+    print(f"Connected to S3 ({cfg.bucket})")
+    print(f"in-memory benchmark: {args.size}MB x{args.repeats}")
+    r = bench.run(float(args.size), args.repeats)
+    print(f"  upload   mean {r['upload_mbps']['mean']:8.1f} Mbps "
+          f"(p90 {r['upload_mbps']['p90']:8.1f})")
+    print(f"  download mean {r['download_mbps']['mean']:8.1f} Mbps "
+          f"(p90 {r['download_mbps']['p90']:8.1f})")
+
+
+def run_multiclient(cfg: Config, args) -> None:
+    from .advanced import MultiClientBenchmark
+
+    bench = MultiClientBenchmark(cfg, clients=args.clients)
+    print(f"Connected to S3 ({cfg.bucket})")
+    print(f"multi-client: {args.clients} clients, {args.size}MB, {args.ops} ops each")
+    r = bench.run(float(args.size), args.ops)
+    print(f"  wall {r['wall_seconds']:.2f}s, "
+          f"{r['aggregate_ops_per_sec']:.1f} aggregate ops/s")
+
+
+def run_cost(cfg, args) -> None:
+    from .advanced import estimate_cost
+
+    sizes = [float(s) for s in (parse_int_list(args.sizes) if args.sizes else cfg.file_sizes_mb)]
+    est = estimate_cost(sizes, cfg.repeats, cfg.warmup, args.direction)
+    b = est.breakdown()
+    print("Cost estimate:")
+    print(f"  storage      {b['storage_gb']:.3f} GB")
+    print(f"  requests     {b['requests']}")
+    print(f"  egress       {b['egress_gb']:.3f} GB")
+    print(f"  total (USD)  ${b['total_usd']:.4f}")
+
+
 def run_tune(cfg: Config) -> None:
     ranges = load_tuning_ranges()
     s3 = create_s3_client(cfg)
@@ -349,6 +386,19 @@ def build_parser() -> argparse.ArgumentParser:
     prov = sub.add_parser("providers", help="List known provider presets.")
     prov.add_argument("--json", action="store_true", help="Output as JSON")
 
+    im = sub.add_parser("inmem", help="In-memory transfer benchmark (no disk).")
+    im.add_argument("--size", type=int, default=8, help="Object size in MB")
+    im.add_argument("--repeats", type=int, default=3)
+
+    mc = sub.add_parser("multiclient", help="Simulate N distinct clients.")
+    mc.add_argument("--size", type=int, default=1, help="Object size in MB")
+    mc.add_argument("-c", "--clients", type=int, default=4)
+    mc.add_argument("--ops", type=int, default=3, help="Ops per client")
+
+    ct = sub.add_parser("cost", help="Estimate cost for a planned benchmark.")
+    ct.add_argument("--direction", choices=["upload", "download"], default="upload")
+    ct.add_argument("--sizes", help="Comma-separated MB sizes (default from FILE_SIZES)")
+
     return parser
 
 
@@ -480,10 +530,12 @@ def main(argv: list[str] | None = None) -> int:
             run_smallobj(cfg, args)
         elif args.command == "mixed":
             run_mixed(cfg, args)
-        elif args.command == "report":
-            run_report(cfg, args)
-        elif args.command == "compare":
-            run_compare(cfg, args)
+        elif args.command == "inmem":
+            run_inmem(cfg, args)
+        elif args.command == "multiclient":
+            run_multiclient(cfg, args)
+        elif args.command == "cost":
+            run_cost(cfg, args)
     except KeyboardInterrupt:
         print("\nInterrupted.", file=sys.stderr)
         return 130

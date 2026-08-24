@@ -1,6 +1,5 @@
 """Tests for client creation and transfer config."""
 import boto3
-import pytest
 
 from s3benchmark.config import Config
 from s3benchmark.transfer import create_s3_client

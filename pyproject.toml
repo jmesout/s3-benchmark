@@ -18,6 +18,10 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest",
+    "ruff",
+    "mypy",
+    "moto[s3]",
+    "numpy<2.3",  # numpy 2.5.x stubs use syntax mypy cannot yet parse
 ]
 parquet = [
     "pyarrow",
@@ -31,3 +35,25 @@ packages = ["s3benchmark"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B"]
+ignore = [
+    "E501",   # line length handled by formatter
+    "B007",   # unused loop variable (style)
+    "B017",   # assert blind exception in tests
+]
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+warn_unused_configs = true
+check_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["numpy", "numpy.*", "matplotlib", "matplotlib.*"]
+ignore_errors = true

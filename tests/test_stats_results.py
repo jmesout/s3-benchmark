@@ -1,8 +1,8 @@
 """Tests for Phase 0 measurement-correctness modules."""
 import math
 
-from s3benchmark.stats import percentile, summarize
 from s3benchmark.results import TransferResult, TransferSample
+from s3benchmark.stats import percentile, summarize
 
 
 def test_summarize_empty():

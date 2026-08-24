@@ -8,10 +8,8 @@ Phase 3 builds on the JSON report (``results.py``) to add:
 from __future__ import annotations
 
 import json
-import math
-import os
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from dataclasses import dataclass
+from typing import Any, Dict, List
 
 import matplotlib
 

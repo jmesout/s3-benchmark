@@ -13,19 +13,25 @@ import os
 import sys
 import time
 from datetime import datetime
+from typing import Any, Dict, Optional
 
 from boto3.s3.transfer import TransferConfig
 
-from .config import Config, ConfigError, TransferParams, load_config, load_tuning_ranges, parse_bool, parse_int_list
-from .configfile import ConfigFile, find_config_file
 from .benchmark import BenchmarkEngine
-from .io import calculate_speed, create_dummy_file
+from .config import (
+    Config,
+    ConfigError,
+    TransferParams,
+    load_config,
+    load_tuning_ranges,
+    parse_bool,
+    parse_int_list,
+)
+from .configfile import ConfigFile, find_config_file
+from .io import calculate_speed
 from .logging_setup import setup_logging
 from .report import (
-    DOWNLOAD_HEADER,
     TUNING_HEADER,
-    UPLOAD_HEADER,
-    plot_size_speed,
     plot_tuning,
     save_results_to_csv,
 )
@@ -132,11 +138,16 @@ def run_mixed(cfg: Config, args) -> None:
         json.dump(result, f, indent=2)
 
 
-def run_report(cfg: Config, args) -> None:
-    from .reporting import render_html, to_parquet, write_html_report, plot_size_speed_with_errors, plot_upload_vs_download
+def run_report(cfg: Optional[Config], args) -> None:
+    from .reporting import (
+        plot_size_speed_with_errors,
+        plot_upload_vs_download,
+        to_parquet,
+        write_html_report,
+    )
 
     # Merge results from one or more JSON files into a single report dict for plotting.
-    combined = {"metadata": {}, "results": []}
+    combined: Dict[str, Any] = {"metadata": {}, "results": []}
     for path in args.files:
         with open(path) as f:
             d = json.load(f)
@@ -158,7 +169,7 @@ def run_report(cfg: Config, args) -> None:
         print(f"Wrote Parquet -> {args.parquet}")
 
 
-def run_compare(cfg: Config, args) -> None:
+def run_compare(cfg: Optional[Config], args) -> None:
     from .reporting import compare_report_files
 
     results = compare_report_files(args.baseline, args.current, args.threshold)

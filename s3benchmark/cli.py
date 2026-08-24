@@ -16,9 +16,11 @@ from datetime import datetime
 
 from boto3.s3.transfer import TransferConfig
 
-from .config import Config, ConfigError, TransferParams, load_config, load_tuning_ranges
+from .config import Config, ConfigError, TransferParams, load_config, load_tuning_ranges, parse_bool, parse_int_list
+from .configfile import ConfigFile, find_config_file
 from .benchmark import BenchmarkEngine
 from .io import calculate_speed, create_dummy_file
+from .logging_setup import setup_logging
 from .report import (
     DOWNLOAD_HEADER,
     TUNING_HEADER,
@@ -218,6 +220,22 @@ def build_parser() -> argparse.ArgumentParser:
         prog="s3-benchmark",
         description="Benchmark S3 upload/download throughput across object sizes.",
     )
+    # Global options (available before the subcommand).
+    parser.add_argument("--config", help="Path to s3benchmark.toml config file")
+    parser.add_argument("--profile", help="Named profile in the config file")
+    parser.add_argument("--file-sizes", help="Override FILE_SIZES (comma-separated MB)")
+    parser.add_argument("--multipart-threshold", type=int, help="Override multipart threshold (bytes)")
+    parser.add_argument("--max-concurrency", type=int, help="Override max concurrency")
+    parser.add_argument("--multipart-chunksize", type=int, help="Override chunk size (bytes)")
+    parser.add_argument("--repeats", type=int, help="Override repeats")
+    parser.add_argument("--warmup", type=int, help="Override warmup transfers")
+    parser.add_argument("--keep-objects", action="store_true", help="Keep test objects")
+    parser.add_argument("--no-verify", action="store_true", help="Disable integrity checks")
+    parser.add_argument("-q", "--quiet", action="store_true", help="Minimal output")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
+    parser.add_argument("--json-logs", action="store_true", help="JSON Lines logging")
+    parser.add_argument("--dry-run", action="store_true", help="Print plan without running")
+
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("upload", help="Measure upload throughput by object size.")
@@ -243,14 +261,95 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _apply_config_file(cfg: Config, args) -> Config:
+    """Merge values from a TOML config file (lower precedence than CLI/env)."""
+    path = args.config or find_config_file()
+    if path is None:
+        return cfg
+    cf = ConfigFile.load(path)
+    sizes = cf.file_sizes_mb(args.profile)
+    if sizes:
+        cfg.file_sizes_mb = sizes
+    t = cf.transfer(args.profile)
+    # Only override transfer values that differ from defaults AND exist in the profile.
+    cfg.transfer = TransferParams(
+        multipart_threshold=t.multipart_threshold,
+        max_concurrency=t.max_concurrency,
+        multipart_chunksize=t.multipart_chunksize,
+        use_threads=t.use_threads,
+    )
+    p = cf.profile(args.profile)
+    for key in ("repeats", "warmup", "verify", "keep_objects"):
+        if key in p:
+            setattr(cfg, key, parse_bool(str(p[key])) if key in ("verify", "keep_objects") else int(p[key]))
+    return cfg
+
+
+def _apply_overrides(cfg: Config, args) -> Config:
+    """Merge CLI overrides (highest precedence) onto the loaded config."""
+    if args.file_sizes:
+        cfg.file_sizes_mb = parse_int_list(args.file_sizes)
+    if args.multipart_threshold is not None:
+        cfg.transfer.multipart_threshold = args.multipart_threshold
+    if args.max_concurrency is not None:
+        cfg.transfer.max_concurrency = args.max_concurrency
+    if args.multipart_chunksize is not None:
+        cfg.transfer.multipart_chunksize = args.multipart_chunksize
+    if args.repeats is not None:
+        cfg.repeats = args.repeats
+    if args.warmup is not None:
+        cfg.warmup = args.warmup
+    if args.keep_objects:
+        cfg.keep_objects = True
+    if args.no_verify:
+        cfg.verify = False
+    cfg.transfer.validate()
+    return cfg
+
+
+def _plan(cfg: Config, args) -> str:
+    """Return a human-readable description of what would run."""
+    lines = [f"Benchmark: {args.command}", f"Bucket: {cfg.bucket}",
+             f"Endpoint: {cfg.endpoint_url}"]
+    if args.command in ("upload", "download"):
+        sizes = cfg.file_sizes_mb
+        total_mb = sum(sizes)
+        lines.append(f"File sizes (MB): {sizes}")
+        lines.append(f"Repeats: {cfg.repeats}, Warmup: {cfg.warmup}, Verify: {cfg.verify}")
+        lines.append(f"Approx data volume: {total_mb} MB x {(cfg.repeats + cfg.warmup)} = "
+                     f"{total_mb * (cfg.repeats + cfg.warmup)} MB transferred")
+    elif args.command == "concurrency":
+        lines.append(f"Direction: {args.direction}, concurrency={args.concurrency}, "
+                     f"size={args.size}MB, ops/worker={args.ops}")
+        vol = args.concurrency * args.ops * args.size
+        lines.append(f"Approx data volume: {vol} MB")
+    elif args.command == "smallobj":
+        lines.append(f"Objects: {args.num} x {args.size}B, concurrency={args.concurrency}")
+    elif args.command == "mixed":
+        lines.append(f"Ops: {args.ops}, read ratio={args.read_ratio}, concurrency={args.concurrency}")
+    lines.append(f"Keep objects: {cfg.keep_objects}")
+    return "\n".join(lines)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
+    setup_logging(
+        level="DEBUG" if args.verbose else ("ERROR" if args.quiet else "INFO"),
+        json_output=args.json_logs,
+    )
+
     try:
         cfg = load_config()
+        cfg = _apply_config_file(cfg, args)
+        cfg = _apply_overrides(cfg, args)
     except ConfigError as exc:
         print(f"Configuration error: {exc}", file=sys.stderr)
         return 1
+
+    if args.dry_run:
+        print(_plan(cfg, args))
+        return 0
 
     try:
         if args.command == "upload":

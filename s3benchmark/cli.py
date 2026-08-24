@@ -186,6 +186,26 @@ def run_compare(cfg: Optional[Config], args) -> None:
         print(f"\n{n_reg} regression(s) detected.")
 
 
+def run_providers(args) -> None:
+    from .presets import PROVIDERS, list_presets
+
+    if getattr(args, "json", False):
+        data = {name: {
+            "endpoint_url": p.endpoint_url,
+            "signature_version": p.signature_version,
+            "addressing_style": p.addressing_style,
+            "notes": p.notes,
+        } for name, p in PROVIDERS.items()}
+        print(json.dumps(data, indent=2))
+        return
+    print("Supported provider presets:\n")
+    for name in list_presets():
+        p = PROVIDERS[name]
+        print(f"{name:<14} endpoint='{p.endpoint_url or '—'}' "
+              f"sig={p.signature_version} addressing={p.addressing_style}")
+        print(f"{'':<14} {p.notes}")
+
+
 def run_tune(cfg: Config) -> None:
     ranges = load_tuning_ranges()
     s3 = create_s3_client(cfg)
@@ -277,6 +297,7 @@ def build_parser() -> argparse.ArgumentParser:
     # Global options (available before the subcommand).
     parser.add_argument("--config", help="Path to s3benchmark.toml config file")
     parser.add_argument("--profile", help="Named profile in the config file")
+    parser.add_argument("--provider", help="Provider preset (aws, civo, minio, r2, …)")
     parser.add_argument("--file-sizes", help="Override FILE_SIZES (comma-separated MB)")
     parser.add_argument("--multipart-threshold", type=int, help="Override multipart threshold (bytes)")
     parser.add_argument("--max-concurrency", type=int, help="Override max concurrency")
@@ -325,6 +346,9 @@ def build_parser() -> argparse.ArgumentParser:
     cmp.add_argument("--threshold", type=float, default=10.0,
                      help="Regression threshold in percent (default 10)")
 
+    prov = sub.add_parser("providers", help="List known provider presets.")
+    prov.add_argument("--json", action="store_true", help="Output as JSON")
+
     return parser
 
 
@@ -354,6 +378,14 @@ def _apply_config_file(cfg: Config, args) -> Config:
 
 def _apply_overrides(cfg: Config, args) -> Config:
     """Merge CLI overrides (highest precedence) onto the loaded config."""
+    if getattr(args, "provider", None):
+        from .presets import get_preset
+
+        preset = get_preset(args.provider)
+        cfg.endpoint_url = cfg.endpoint_url or preset.endpoint_url
+        cfg.signature_version = preset.signature_version
+        cfg.addressing_style = preset.addressing_style
+        cfg.request_checksum_calculation = preset.request_checksum_calculation
     if args.file_sizes:
         cfg.file_sizes_mb = parse_int_list(args.file_sizes)
     if args.multipart_threshold is not None:
@@ -398,7 +430,7 @@ def _plan(cfg: Config, args) -> str:
     return "\n".join(lines)
 
 
-NO_S3_COMMANDS = {"report", "compare"}
+NO_S3_COMMANDS = {"report", "compare", "providers"}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -416,6 +448,8 @@ def main(argv: list[str] | None = None) -> int:
                 run_report(None, args)
             elif args.command == "compare":
                 run_compare(None, args)
+            elif args.command == "providers":
+                run_providers(args)
         except FileNotFoundError as exc:
             print(f"Error: {exc}", file=sys.stderr)
             return 1

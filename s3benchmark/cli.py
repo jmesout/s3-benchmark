@@ -28,6 +28,7 @@ from .report import (
     save_results_to_csv,
 )
 from .transfer import create_s3_client
+from .workloads import ConcurrencyBenchmark, MixedWorkloadBenchmark, SmallObjectBenchmark
 
 
 def _transfer_config(params: TransferParams) -> TransferConfig:
@@ -82,6 +83,51 @@ def _print_report(report) -> None:
             f"n={s['succeeded']}/{s['attempts']} failed={s['failed']} "
             f"{ok}"
         )
+
+
+def run_concurrency(cfg: Config, args) -> None:
+    bench = ConcurrencyBenchmark(cfg)
+    print(f"Connected to S3 ({cfg.bucket})")
+    print(f"concurrency benchmark: {args.direction} x{args.concurrency} "
+          f"{args.size}MB x{args.ops} ops")
+    result = bench.run(args.direction, float(args.size), args.concurrency, args.ops)
+    bench.cleanup()
+    print(f"\nAggregate: {result.aggregate_mbps():.1f} Mbps "
+          f"({result.aggregate_mibs():.1f} MiB/s), "
+          f"{result.ops_per_second:.1f} ops/s, errors={result.errors}")
+
+
+def run_smallobj(cfg: Config, args) -> None:
+    bench = SmallObjectBenchmark(cfg)
+    print(f"Connected to S3 ({cfg.bucket})")
+    print(f"small-object benchmark: {args.num} x {args.size}B (concurrency={args.concurrency})")
+    result = bench.run(args.size, args.num, args.concurrency)
+    for op in ("put", "get", "delete"):
+        s = result[op]
+        print(f"  {op.upper():<6} mean {s['mean']*1000:7.2f} ms  "
+              f"p90 {s['p90']*1000:7.2f} ms  p99 {s['p99']*1000:7.2f} ms")
+    ts = _timestamp()
+    with open(f"smallobj_report_{ts}.json", "w") as f:
+        json.dump(result, f, indent=2)
+
+
+def run_mixed(cfg: Config, args) -> None:
+    bench = MixedWorkloadBenchmark(cfg, read_ratio=args.read_ratio)
+    sizes = [float(s) for s in cfg.file_sizes_mb]
+    print(f"Connected to S3 ({cfg.bucket})")
+    print(f"mixed workload: {args.ops} ops, read ratio={args.read_ratio}, "
+          f"concurrency={args.concurrency}, sizes={sizes}")
+    result = bench.run(sizes, args.ops, args.concurrency)
+    bench.cleanup()
+    for op, key in (("READ", "read_time_summary"), ("WRITE", "write_time_summary")):
+        s = result[key]
+        if s["n"]:
+            print(f"  {op:<5} n={s['n']} mean {s['mean']*1000:7.2f} ms  "
+                  f"p90 {s['p90']*1000:7.2f} ms  p99 {s['p99']*1000:7.2f} ms")
+    print(f"  errors={result['errors']}")
+    ts = _timestamp()
+    with open(f"mixed_report_{ts}.json", "w") as f:
+        json.dump(result, f, indent=2)
 
 
 def run_tune(cfg: Config) -> None:
@@ -178,6 +224,22 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("download", help="Measure download throughput by object size.")
     sub.add_parser("tune", help="Grid-search TransferConfig parameters on a download.")
 
+    c = sub.add_parser("concurrency", help="Measure aggregate throughput with parallel transfers.")
+    c.add_argument("--direction", choices=["upload", "download"], default="upload")
+    c.add_argument("--size", type=int, default=1, help="Object size in MB")
+    c.add_argument("-c", "--concurrency", type=int, default=4, help="Parallel workers")
+    c.add_argument("--ops", type=int, default=3, help="Ops per worker")
+
+    s = sub.add_parser("smallobj", help="Measure PUT/GET/DELETE latency for small objects.")
+    s.add_argument("--size", type=int, default=1024, help="Object size in bytes")
+    s.add_argument("-n", "--num", type=int, default=100, help="Number of objects")
+    s.add_argument("-c", "--concurrency", type=int, default=1)
+
+    m = sub.add_parser("mixed", help="Run a read/write mix across object sizes.")
+    m.add_argument("--read-ratio", type=float, default=0.8, help="Fraction of reads (0-1)")
+    m.add_argument("--ops", type=int, default=50, help="Total operations")
+    m.add_argument("-c", "--concurrency", type=int, default=1)
+
     return parser
 
 
@@ -197,6 +259,12 @@ def main(argv: list[str] | None = None) -> int:
             run_download(cfg)
         elif args.command == "tune":
             run_tune(cfg)
+        elif args.command == "concurrency":
+            run_concurrency(cfg, args)
+        elif args.command == "smallobj":
+            run_smallobj(cfg, args)
+        elif args.command == "mixed":
+            run_mixed(cfg, args)
     except KeyboardInterrupt:
         print("\nInterrupted.", file=sys.stderr)
         return 130

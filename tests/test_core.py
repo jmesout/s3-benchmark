@@ -51,7 +51,8 @@ def test_transfer_params_validation():
 
 
 def test_load_config_requires_bucket(monkeypatch):
-    monkeypatch.delenv("S3_BUCKET_NAME", raising=False)
+    # Override with empty string so a local .env file cannot satisfy this test.
+    monkeypatch.setenv("S3_BUCKET_NAME", "")
     with pytest.raises(ConfigError):
         load_config()
 

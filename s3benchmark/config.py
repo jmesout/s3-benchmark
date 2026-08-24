@@ -78,6 +78,10 @@ class Config:
     signature_version: str = "s3v4"
     file_sizes_mb: List[int] = field(default_factory=list)
     transfer: TransferParams = field(default_factory=TransferParams)
+    repeats: int = 3
+    warmup: int = 1
+    verify: bool = True
+    keep_objects: bool = False
 
 
 def load_config(env: dict | None = None) -> Config:
@@ -111,6 +115,10 @@ def load_config(env: dict | None = None) -> Config:
         signature_version=os.getenv("SIGNATURE_VERSION", "s3v4"),
         file_sizes_mb=file_sizes,
         transfer=transfer,
+        repeats=int(os.getenv("REPEATS", "3")),
+        warmup=int(os.getenv("WARMUP", "1")),
+        verify=parse_bool(os.getenv("VERIFY", "true")),
+        keep_objects=parse_bool(os.getenv("KEEP_OBJECTS", "false")),
     )
 
 

@@ -17,6 +17,7 @@ from datetime import datetime
 from boto3.s3.transfer import TransferConfig
 
 from .config import Config, ConfigError, TransferParams, load_config, load_tuning_ranges
+from .benchmark import BenchmarkEngine
 from .io import calculate_speed, create_dummy_file
 from .report import (
     DOWNLOAD_HEADER,
@@ -43,87 +44,44 @@ def _timestamp() -> str:
 
 
 def run_upload(cfg: Config) -> None:
-    s3 = create_s3_client(cfg)
-    print("Connected to S3")
+    engine = BenchmarkEngine(cfg)
+    print(f"Connected to S3 ({cfg.bucket})")
+    print(f"repeats={engine.repeats} warmup={engine.warmup} verify={engine.verify}")
 
-    config = _transfer_config(cfg.transfer)
-
-    results = []
-    for size_mb in cfg.file_sizes_mb:
-        file_name = f"dummy_{size_mb}mb.txt"
-        object_key = f"example_{size_mb}mb.txt"
-
-        print(f"Creating dummy file of size {size_mb}MB...")
-        create_dummy_file(file_name, size_mb)
-        print(f"Dummy file of size {size_mb}MB created.")
-
-        print(f"Uploading {size_mb}MB file to S3...")
-        start = time.perf_counter()
-        s3.upload_file(
-            Filename=file_name, Bucket=cfg.bucket, Key=object_key, Config=config
-        )
-        elapsed = time.perf_counter() - start
-
-        file_size = os.path.getsize(file_name)
-        speed = calculate_speed(elapsed, file_size)
-        print(f"Uploaded {file_size} bytes in {elapsed:.2f} seconds.")
-        print(f"Upload speed: {speed:.2f} Mbps")
-
-        results.append([
-            size_mb, elapsed, speed,
-            cfg.transfer.multipart_threshold,
-            cfg.transfer.max_concurrency,
-            cfg.transfer.multipart_chunksize,
-            cfg.transfer.use_threads,
-        ])
-
-        os.remove(file_name)
-        print(f"Local file of size {size_mb}MB deleted.\n")
+    report = engine.run_benchmark("upload", [float(s) for s in cfg.file_sizes_mb])
+    engine.cleanup()
 
     ts = _timestamp()
-    save_results_to_csv(results, f"upload_results_{ts}.csv", UPLOAD_HEADER)
-    plot_size_speed(results, f"upload_speeds_{ts}.png",
-                    "Upload Speed by File Size", "Upload Speed (Mbps)")
+    report.save(f"upload_report_{ts}.json")
+    _print_report(report)
 
 
 def run_download(cfg: Config) -> None:
-    s3 = create_s3_client(cfg)
-    print("Connected to S3")
+    engine = BenchmarkEngine(cfg)
+    print(f"Connected to S3 ({cfg.bucket})")
+    print(f"repeats={engine.repeats} warmup={engine.warmup} verify={engine.verify}")
 
-    config = _transfer_config(cfg.transfer)
-
-    results = []
-    for size_mb in cfg.file_sizes_mb:
-        object_key = f"example_{size_mb}mb.txt"
-        download_path = f"downloaded_{size_mb}mb.txt"
-
-        print(f"Downloading {size_mb}MB file from S3...")
-        start = time.perf_counter()
-        s3.download_file(
-            Bucket=cfg.bucket, Key=object_key, Filename=download_path, Config=config
-        )
-        elapsed = time.perf_counter() - start
-
-        file_size = os.path.getsize(download_path)
-        speed = calculate_speed(elapsed, file_size)
-        print(f"Downloaded {file_size} bytes in {elapsed:.2f} seconds.")
-        print(f"Download speed: {speed:.2f} Mbps")
-
-        results.append([
-            size_mb, elapsed, speed,
-            cfg.transfer.multipart_threshold,
-            cfg.transfer.max_concurrency,
-            cfg.transfer.multipart_chunksize,
-            cfg.transfer.use_threads,
-        ])
-
-        os.remove(download_path)
-        print(f"Downloaded file of size {size_mb}MB deleted.\n")
+    report = engine.run_benchmark("download", [float(s) for s in cfg.file_sizes_mb])
+    engine.cleanup()
 
     ts = _timestamp()
-    save_results_to_csv(results, f"download_results_{ts}.csv", DOWNLOAD_HEADER)
-    plot_size_speed(results, f"download_speeds_{ts}.png",
-                    "Download Speed by File Size", "Download Speed (Mbps)")
+    report.save(f"download_report_{ts}.json")
+    _print_report(report)
+
+
+def _print_report(report) -> None:
+    print("\nResults:")
+    for r in report.results:
+        s = r.summary()
+        mbps_mean = s["throughput_mbps"]["mean"]
+        mibs_mean = s["throughput_mibs"]["mean"]
+        ok = "OK" if s["integrity_ok"] is not False else "INTEGRITY_FAIL"
+        print(
+            f"  {s['size_mb']:>8.0f} MB  {s['direction']:<9} "
+            f"mean {mbps_mean:8.1f} Mbps ({mibs_mean:7.1f} MiB/s) "
+            f"n={s['succeeded']}/{s['attempts']} failed={s['failed']} "
+            f"{ok}"
+        )
 
 
 def run_tune(cfg: Config) -> None:
